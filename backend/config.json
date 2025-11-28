@@ -24,11 +24,12 @@
     "max_leverage_notional_pct": 5.0
   },
   "notifications": {
-    "onesignal_app_id": "YOUR_ONESIGNAL_APP_ID",
-    "onesignal_api_key": "YOUR_REST_API_KEY",
+    "onesignal_app_id": "9fd9891c-2b88-49ba-8df2-3e3adb27e7bc",
+    "onesignal_api_key": "kjh3ub5esutjnl7nruqmdx2iz",
     "segment": "all"
   },
   "scheduler": {
     "interval_minutes": 5
   }
 }
+
