@@ -3,3 +3,5 @@ apscheduler
 yfinance
 pandas
 numpy
+requests
+flask-cors
