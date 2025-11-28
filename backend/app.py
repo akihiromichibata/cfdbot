@@ -1,21 +1,37 @@
 
-import json, time, logging, requests
+# app.py（全文コピペ用）
+import json, logging, requests
 from datetime import datetime
 from flask import Flask, request, jsonify
+from apscheduler.schedulers.background import BackgroundScheduler
 import yfinance as yf
 import pandas as pd
-from apscheduler.schedulers.background import BackgroundScheduler
-from indicators import bollinger_bands, rsi, volume_spike
 
+# ★ ここがポイント：CORS を有効化
+from flask_cors import CORS
+
+# ===== Flask 初期化 =====
 app = Flask(__name__)
+
+# Netlify の公開 URL を許可（あなたの URL に置き換えてください）
+# 例: "https://fabulous-florentine-7a9f86.netlify.app"
+ALLOWED_ORIGIN = "https://YOUR-NETLIFY-SITE.netlify.app"
+CORS(app, resources={r"/*": {"origins": ALLOWED_ORIGIN}})
+
+# ===== 設定読み込み =====
+CFG_PATH = 'config.json'
 logging.basicConfig(filename='logs/app.log', level=logging.INFO)
-cfg_path = 'config.json'
 
 def load_cfg():
-    with open(cfg_path, 'r', encoding='utf-8') as f:
+    with open(CFG_PATH, 'r', encoding='utf-8') as f:
         return json.load(f)
 
-CFG = load_cfg()
+def save_cfg(cfg):
+    with open(CFG_PATH, 'w', encoding='utf-8') as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+# ===== 指標計算 =====
+from indicators import bollinger_bands, rsi, volume_spike
 
 def fetch_hist(sym, period='3mo', interval='1h'):
     tk = yf.Ticker(sym)
@@ -32,29 +48,30 @@ def should_alert(sym_name, df: pd.DataFrame, cfg):
     last_upper = upper.iloc[last]
     last_lower = lower.iloc[last]
     last_rsi = rsi_vals.iloc[last] if not pd.isna(rsi_vals.iloc[last]) else None
-    vol_spike = volume_spike(vol, cfg['rules']['volume_ma_period'], cfg['rules']['volume_spike_mult'])
+    vol_spike_flag = volume_spike(vol, cfg['rules']['volume_ma_period'], cfg['rules']['volume_spike_mult'])
 
     msg = None
-    # 指数：-2σでロング、+2σでショート候補（ショートは厳格条件）
+    # 指数：-2σでロング、+2σでショート候補
     if sym_name in ('nikkei225','nasdaq100'):
-        if cfg['entry_conditions']['index_buy_on_minus2sigma'] and last_close <= last_lower and vol_spike:
-            msg = f"[{sym_name}] -2σタッチ＋出来高増→短期ロング候補（押し目）"
-        elif cfg['entry_conditions']['index_sell_on_plus2sigma'] and last_close >= last_upper and vol_spike:
-            msg = f"[{sym_name}] +2σタッチ＋出来高増→短期ショート候補（過熱）"
+        if cfg['entry_conditions']['index_buy_on_minus2sigma'] and last_close <= last_lower and vol_spike_flag:
+            msg = f"[{sym_name}] -2σタッチ＋出来高増→短期ロング候補"
+        elif cfg['entry_conditions']['index_sell_on_plus2sigma'] and last_close >= last_upper and vol_spike_flag:
+            msg = f"[{sym_name}] +2σタッチ＋出来高増→短期ショート候補"
     else:
-        # コモディティ：20MA付近で反発＋RSI>閾値でロング
+        # コモディティ：20MA反発＋RSI>=閾値＋出来高増
+        last_ma = ma.iloc[last]
         if cfg['entry_conditions']['commodity_buy_on_ma_bounce']:
-            last_ma = ma.iloc[last]
-            if last_ma and last_close >= last_ma and last_rsi and last_rsi >= cfg['rules']['rsi_buy_threshold'] and vol_spike:
+            if last_ma and last_close >= last_ma and last_rsi and last_rsi >= cfg['rules']['rsi_buy_threshold'] and vol_spike_flag:
                 msg = f"[{sym_name}] 20MA反発＋RSI{int(last_rsi)}→短期ロング候補"
 
-    return msg, {
+    detail = {
         "last_close": float(last_close),
         "upper": float(last_upper) if last_upper else None,
         "lower": float(last_lower) if last_lower else None,
         "rsi": float(last_rsi) if last_rsi else None,
-        "vol_spike": bool(vol_spike)
+        "vol_spike": bool(vol_spike_flag)
     }
+    return msg, detail
 
 def push_onesignal(app_id, api_key, title, body, segment="all"):
     url = "https://onesignal.com/api/v1/notifications"
@@ -74,7 +91,7 @@ def job():
     for name, ticker in syms.items():
         try:
             df = fetch_hist(ticker)
-            if df is None or df.empty: 
+            if df is None or df.empty:
                 continue
             msg, detail = should_alert(name, df, cfg)
             if msg:
@@ -87,17 +104,24 @@ def job():
         except Exception as e:
             logging.exception(f"error {name}: {e}")
 
+# ===== API エンドポイント =====
 @app.route("/config", methods=["GET","POST"])
 def config_endpoint():
     if request.method == "GET":
         return jsonify(load_cfg())
     data = request.get_json(force=True)
-    with open(cfg_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    save_cfg(data)
     return jsonify({"ok": True})
 
+# 任意：ヘルスチェック（Render側で設定するなら）
+@app.route("/healthz")
+def healthz():
+    return jsonify({"ok": True, "ts": datetime.utcnow().isoformat()})
+
+# ===== 起動 =====
 if __name__ == "__main__":
     sched = BackgroundScheduler()
-    sched.add_job(job, 'interval', minutes=CFG['scheduler']['interval_minutes'])
+    sched.add_job(job, 'interval', minutes=load_cfg()['scheduler']['interval_minutes'])
     sched.start()
+    # 0.0.0.0 で起動（Render から外部アクセス可能）
     app.run(host="0.0.0.0", port=5000)
