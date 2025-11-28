@@ -1,0 +1,225 @@
+
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>CFD アラート設定</title>
+
+  <!-- PWA: manifest を参照（ホーム画面に追加のため必須） -->
+  /manifest.json
+  <meta name="theme-color" content="#0b1220">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- 簡易スタイル（必要最低限） -->
+  <style>
+    :root { --bg:#0b1220; --fg:#eee; --accent:#36c; --muted:#b8c; }
+    body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial; background:var(--bg); color:var(--fg); }
+    header { padding:18px 20px; border-bottom:1px solid #222; }
+    main { padding:20px; max-width:780px; margin:0 auto; }
+    h1, h2 { margin:0 0 10px; }
+    .card { background:#121826; border:1px solid #1e2636; border-radius:8px; padding:16px; margin:16px 0; }
+    label { display:block; margin:10px 0 6px; color:#cbd5e1; }
+    input[type="number"] { width:140px; padding:6px 8px; background:#0b1220; color:var(--fg); border:1px solid #344256; border-radius:6px; }
+    button { cursor:pointer; background:var(--accent); color:#fff; border:none; border-radius:6px; padding:10px 14px; font-weight:600; }
+    button.secondary { background:#263247; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    .note { color:#aab; font-size:0.92rem; }
+    .ok { color:#72ff9f; }
+    .err { color:#ff6b6b; }
+    .divider { border-top:1px dashed #2a3448; margin:14px 0; }
+  </style>
+
+  <!-- OneSignal SDK（Web Push用）。App ID は本文の init() に記載 -->
+  https://cdn.onesignal.com/sdks/OneSignalSDK.js</script>
+</head>
+<body>
+  <header>
+    <h1>CFD アラート設定</h1>
+    <div class="note">※ iPhoneはSafariでこのページを開き、<b>共有 → ホーム画面に追加</b>してPWAから起動すると通知が使えます。</div>
+  </header>
+
+  <main>
+    <!-- 通知購読＆状態 -->
+    <section class="card">
+      <h2>通知の準備</h2>
+      <p class="note">
+        ・初回は「通知を許可」を押して購読します。<br>
+        ・iOSの仕様により、<b>ホーム画面に追加したPWA</b>でのみWeb Pushが動作します。
+      </p>
+      <div class="row">
+        <button id="btn-perm">通知を許可</button>
+        <button id="btn-test" class="secondary">テスト通知を受け取る</button>
+        <span id="perm-status" class="note"></span>
+      </div>
+      <div class="divider"></div>
+      <div class="note">
+        通知が来ない場合：PWAで起動しているか／HTTPS公開か／<code>OneSignalSDKWorker.js</code>がサイト直下にあるかを確認してください。
+      </div>
+    </section>
+
+    <!-- 閾値の調整 -->
+    <section class="card">
+      <h2>アラート閾値（エントリー重視）</h2>
+      <form id="form-cfg">
+        <label>ボリンジャーバンド期間（BB期間）</label>
+        <input id="bb_period" type="number" min="5" max="50" value="20">
+
+        <label>ボリンジャーバンドσ（BBσ）</label>
+        <input id="bb_sigma" type="number" step="0.1" min="1" max="3" value="2.0">
+
+        <label>RSI買い閾値</label>
+        <input id="rsi_buy_threshold" type="number" min="20" max="60" value="40">
+
+        <label>出来高移動平均期間</label>
+        <input id="vol_ma" type="number" min="5" max="60" value="20">
+
+        <label>出来高スパイク倍率（移動平均×倍率）</label>
+        <input id="vol_mult" type="number" step="0.1" min="1.0" max="3.0" value="1.5">
+
+        <div class="row" style="margin-top:14px;">
+          <button type="submit">保存</button>
+          <button type="button" id="btn-reload" class="secondary">最新設定を読み込み</button>
+          <span id="save-status" class="note"></span>
+        </div>
+      </form>
+    </section>
+
+    <!-- （任意）簡易チャート：TradingViewウィジェット -->
+    <section class="card">
+      <h2>簡易チャート（任意）</h2>
+      <div id="tvchart" style="height:360px;"></div>
+      <p class="note">※ 監視対象の表示例。必要なければこのブロックは削除して構いません。</p>
+    </section>
+  </main>
+
+  <!-- OneSignal 初期化＆UIロジック -->
+  <script>
+    // ======= OneSignal 初期化 =======
+    // ※ appId は OneSignal で発行された値に置き換えてください。
+    const ONESIGNAL_APP_ID = "YOUR_ONESIGNAL_APP_ID";
+
+    window.OneSignal = window.OneSignal || [];
+    OneSignal.push(function () {
+      OneSignal.init({ appId: ONESIGNAL_APP_ID });
+
+      // 許可状態の表示
+      OneSignal.isPushNotificationsEnabled().then((enabled) => {
+        setPermStatus(enabled ? "通知許可済み" : "未許可", enabled);
+      });
+
+      // 購読状態の変化を監視
+      OneSignal.on('subscriptionChange', function (isSubscribed) {
+        setPermStatus(isSubscribed ? "購読中（通知可能）" : "未購読", isSubscribed);
+      });
+    });
+
+    // UI：通知許可ボタン
+    document.getElementById("btn-perm").addEventListener("click", () => {
+      OneSignal.Slidedown.promptPush(); // 許可ダイアログ表示
+    });
+
+    // UI：テスト通知（OneSignalのダッシュボード送信が確実／ここでは簡易動作確認）
+    document.getElementById("btn-test").addEventListener("click", async () => {
+      try {
+        // ローカル通知（Service Worker経由）— 即時表示の簡易テスト
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg && reg.showNotification) {
+          await reg.showNotification("CFD Alert（テスト）", {
+            body: "この端末で通知を受け取れるかの簡易テストです。",
+            icon: "/icon-192.png",
+          });
+          setPermStatus("テスト通知を送信しました。", true);
+        } else {
+          setPermStatus("Service Worker未登録の可能性", false);
+        }
+      } catch (e) {
+        console.error(e);
+        setPermStatus("テスト通知の送信に失敗しました。", false);
+      }
+    });
+
+    function setPermStatus(text, ok) {
+      const el = document.getElementById("perm-status");
+      el.textContent = text;
+      el.className = ok ? "note ok" : "note err";
+    }
+
+    // ======= 設定保存・読み込み（Renderの /config を利用） =======
+    const SAVE_STATUS = document.getElementById("save-status");
+
+    async function loadConfig() {
+      try {
+        const res = await fetch("/config", { method: "GET" });
+        const cfg = await res.json();
+
+        document.getElementById("bb_period").value = cfg.rules.bb_period ?? 20;
+        document.getElementById("bb_sigma").value = cfg.rules.bb_sigma ?? 2.0;
+        document.getElementById("rsi_buy_threshold").value = cfg.rules.rsi_buy_threshold ?? 40;
+        document.getElementById("vol_ma").value = cfg.rules.volume_ma_period ?? 20;
+        document.getElementById("vol_mult").value = cfg.rules.volume_spike_mult ?? 1.5;
+
+        SAVE_STATUS.textContent = "設定を読み込みました。";
+        SAVE_STATUS.className = "note ok";
+      } catch (e) {
+        console.error(e);
+        SAVE_STATUS.textContent = "設定の読み込みに失敗しました。";
+        SAVE_STATUS.className = "note err";
+      }
+    }
+
+    async function saveConfig(e) {
+      e.preventDefault();
+      try {
+        // 既存設定を取得
+        const cur = await (await fetch("/config", { method: "GET" })).json();
+        // 値を更新
+        cur.rules.bb_period = parseInt(document.getElementById("bb_period").value);
+        cur.rules.bb_sigma = parseFloat(document.getElementById("bb_sigma").value);
+        cur.rules.rsi_buy_threshold = parseInt(document.getElementById("rsi_buy_threshold").value);
+        cur.rules.volume_ma_period = parseInt(document.getElementById("vol_ma").value);
+        cur.rules.volume_spike_mult = parseFloat(document.getElementById("vol_mult").value);
+
+        // 保存
+        const res = await fetch("/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(cur)
+        });
+        const ok = (await res.json()).ok;
+        SAVE_STATUS.textContent = ok ? "保存しました。" : "保存に失敗しました。";
+        SAVE_STATUS.className = ok ? "note ok" : "note err";
+      } catch (e) {
+        console.error(e);
+        SAVE_STATUS.textContent = "保存時にエラーが発生しました。";
+        SAVE_STATUS.className = "note err";
+      }
+    }
+
+    document.getElementById("form-cfg").addEventListener("submit", saveConfig);
+    document.getElementById("btn-reload").addEventListener("click", loadConfig);
+    // 起動時に読み込み
+    loadConfig();
+
+    // ======= TradingView ウィジェット（任意） =======
+    // 使わない場合はこのブロックを削除可
+  </script>
+
+  <!-- TradingViewウィジェット（任意） -->
+  https://s3.tradingview.com/tv.js</script>
+  <script>
+    try {
+      new TradingView.widget({
+        "container_id": "tvchart",
+        "symbol": "NASDAQ:NDX",      // 例：NASDAQ100（変更可）
+        "interval": "60",
+        "timezone": "Asia/Tokyo",
+        "theme": "dark",
+        "style": "1",
+        "locale": "ja",
+        "hide_side_toolbar": true,
+        "allow_symbol_change": true,
+        "autosize": true
+      });
+    } catch (e) { console.warn("TradingView init skipped:", e); }
+  </script>
+</body>
