@@ -5,55 +5,72 @@
   <meta charset="utf-8" />
   <title>CFD アラート設定</title>
 
-  <!-- PWA: manifest を参照（ホーム画面に追加のため必須） -->
+  <!-- PWA: ホーム画面追加のための manifest -->
   /manifest.json
   <meta name="theme-color" content="#0b1220">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <!-- 簡易スタイル（必要最低限） -->
+  <!-- 最小限のスタイル -->
   <style>
-    :root { --bg:#0b1220; --fg:#eee; --accent:#36c; --muted:#b8c; }
-    body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial; background:var(--bg); color:var(--fg); }
+    :root { --bg:#0b1220; --fg:#e8eef9; --accent:#3b82f6; --card:#121826; --border:#1e2636; --muted:#9aa4b2; }
+    body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; background:var(--bg); color:var(--fg); }
     header { padding:18px 20px; border-bottom:1px solid #222; }
-    main { padding:20px; max-width:780px; margin:0 auto; }
-    h1, h2 { margin:0 0 10px; }
-    .card { background:#121826; border:1px solid #1e2636; border-radius:8px; padding:16px; margin:16px 0; }
-    label { display:block; margin:10px 0 6px; color:#cbd5e1; }
-    input[type="number"] { width:140px; padding:6px 8px; background:#0b1220; color:var(--fg); border:1px solid #344256; border-radius:6px; }
-    button { cursor:pointer; background:var(--accent); color:#fff; border:none; border-radius:6px; padding:10px 14px; font-weight:600; }
+    main   { padding:20px; max-width:860px; margin:0 auto; }
+    h1,h2 { margin:0 0 10px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; margin:16px 0; }
+    label { display:block; margin:12px 0 6px; color:#cbd5e1; }
+    input[type="number"] { width:140px; padding:8px 10px; background:#0b1220; color:var(--fg); border:1px solid #344256; border-radius:6px; }
+    input[type="text"]   { width:100%; max-width:520px; padding:8px 10px; background:#0b1220; color:var(--fg); border:1px solid #344256; border-radius:6px; }
+    button { cursor:pointer; background:var(--accent); color:#fff; border:none; border-radius:8px; padding:10px 14px; font-weight:600; }
     button.secondary { background:#263247; }
     .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
-    .note { color:#aab; font-size:0.92rem; }
+    .note { color:var(--muted); font-size:0.93rem; }
     .ok { color:#72ff9f; }
     .err { color:#ff6b6b; }
     .divider { border-top:1px dashed #2a3448; margin:14px 0; }
+    code { background:#0b1220; padding:2px 6px; border:1px solid #263247; border-radius:6px; }
   </style>
 
-  <!-- OneSignal SDK（Web Push用）。App ID は本文の init() に記載 -->
+  <!-- OneSignal SDK（Web Push用） -->
   https://cdn.onesignal.com/sdks/OneSignalSDK.js</script>
 </head>
 <body>
   <header>
     <h1>CFD アラート設定</h1>
-    <div class="note">※ iPhoneはSafariでこのページを開き、<b>共有 → ホーム画面に追加</b>してPWAから起動すると通知が使えます。</div>
+    <div class="note">
+      iPhoneはSafariでこのページを開き、<b>共有 → ホーム画面に追加</b>してPWAから起動すると通知が使えます。<br/>
+      通知が来ない場合：HTTPS公開／<code>manifest.json</code>／<code>OneSignalSDKWorker.js</code>配置を確認してください。
+    </div>
   </header>
 
   <main>
+    <!-- バックエンドURLの設定（初回だけここで貼り替え可能／保存不要の見た目用） -->
+    <section class="card">
+      <h2>接続設定</h2>
+      <label>バックエンドURL（RenderのWeb ServiceのURL）</label>
+      <input id="backend_url_input" type="text" placeholder="https://YOUR-RENDER-SERVICE.onrender.com" />
+      <div class="row" style="margin-top:10px;">
+        <button id="btn-set-backend" class="secondary">このURLで接続テスト</button>
+        <span id="backend-status" class="note"></span>
+      </div>
+      <div class="divider"></div>
+      <div class="note">
+        ※上の入力欄に値を入れなくても、下のスクリプト内の <code>BACKEND_URL</code> が既定値になります。<br/>
+        変更したいときだけ「接続テスト」で一時的に差し替えできます。
+      </div>
+    </section>
+
     <!-- 通知購読＆状態 -->
     <section class="card">
       <h2>通知の準備</h2>
       <p class="note">
-        ・初回は「通知を許可」を押して購読します。<br>
-        ・iOSの仕様により、<b>ホーム画面に追加したPWA</b>でのみWeb Pushが動作します。
+        初回は「通知を許可」を押して購読します。<br>
+        iOSの仕様により、<b>ホーム画面に追加したPWA</b>でのみWeb Pushが動作します。
       </p>
       <div class="row">
         <button id="btn-perm">通知を許可</button>
         <button id="btn-test" class="secondary">テスト通知を受け取る</button>
         <span id="perm-status" class="note"></span>
-      </div>
-      <div class="divider"></div>
-      <div class="note">
-        通知が来ない場合：PWAで起動しているか／HTTPS公開か／<code>OneSignalSDKWorker.js</code>がサイト直下にあるかを確認してください。
       </div>
     </section>
 
@@ -88,16 +105,20 @@
     <section class="card">
       <h2>簡易チャート（任意）</h2>
       <div id="tvchart" style="height:360px;"></div>
-      <p class="note">※ 監視対象の表示例。必要なければこのブロックは削除して構いません。</p>
+      <p class="note">監視対象の表示例。不要ならこのブロックごと削除して構いません。</p>
     </section>
   </main>
+
+  <!-- 設定：あなたの値に置き換えてください -->
+  <script>
+    // ★★★ ここをあなたの値に置き換え ★★★
+    const BACKEND_URL = "https://YOUR-RENDER-SERVICE.onrender.com"; // 例：https://cfdbot.onrender.com
+    const ONESIGNAL_APP_ID = "YOUR_ONESIGNAL_APP_ID";               // あなたのApp ID
+  </script>
 
   <!-- OneSignal 初期化＆UIロジック -->
   <script>
     // ======= OneSignal 初期化 =======
-    // ※ appId は OneSignal で発行された値に置き換えてください。
-    const ONESIGNAL_APP_ID = "YOUR_ONESIGNAL_APP_ID";
-
     window.OneSignal = window.OneSignal || [];
     OneSignal.push(function () {
       OneSignal.init({ appId: ONESIGNAL_APP_ID });
@@ -118,10 +139,9 @@
       OneSignal.Slidedown.promptPush(); // 許可ダイアログ表示
     });
 
-    // UI：テスト通知（OneSignalのダッシュボード送信が確実／ここでは簡易動作確認）
+    // UI：テスト通知（SW経由のローカル表示）
     document.getElementById("btn-test").addEventListener("click", async () => {
       try {
-        // ローカル通知（Service Worker経由）— 即時表示の簡易テスト
         const reg = await navigator.serviceWorker.getRegistration();
         if (reg && reg.showNotification) {
           await reg.showNotification("CFD Alert（テスト）", {
@@ -143,13 +163,38 @@
       el.textContent = text;
       el.className = ok ? "note ok" : "note err";
     }
+  </script>
 
-    // ======= 設定保存・読み込み（Renderの /config を利用） =======
+  <!-- 設定保存・読み込み（Renderの /config を利用） -->
+  <script>
     const SAVE_STATUS = document.getElementById("save-status");
+
+    // 接続テスト用（入力欄から一時差し替え）
+    let effectiveBackendUrl = BACKEND_URL;
+    document.getElementById("backend_url_input").value = BACKEND_URL;
+    document.getElementById("btn-set-backend").addEventListener("click", async () => {
+      const u = document.getElementById("backend_url_input").value.trim();
+      if (!u) return;
+      document.getElementById("backend-status").textContent = "接続テスト中…";
+      try {
+        const res = await fetch(`${u}/config`, { method: "GET" });
+        if (res.ok) {
+          effectiveBackendUrl = u;
+          document.getElementById("backend-status").textContent = "接続成功：このURLを使用します";
+          document.getElementById("backend-status").className = "note ok";
+        } else {
+          throw new Error(`status=${res.status}`);
+        }
+      } catch (e) {
+        console.error(e);
+        document.getElementById("backend-status").textContent = "接続失敗：URLやCORS設定を確認してください";
+        document.getElementById("backend-status").className = "note err";
+      }
+    });
 
     async function loadConfig() {
       try {
-        const res = await fetch("/config", { method: "GET" });
+        const res = await fetch(`${effectiveBackendUrl}/config`, { method: "GET" });
         const cfg = await res.json();
 
         document.getElementById("bb_period").value = cfg.rules.bb_period ?? 20;
@@ -170,8 +215,8 @@
     async function saveConfig(e) {
       e.preventDefault();
       try {
-        // 既存設定を取得
-        const cur = await (await fetch("/config", { method: "GET" })).json();
+        // 現在の設定を取得
+        const cur = await (await fetch(`${effectiveBackendUrl}/config`, { method: "GET" })).json();
         // 値を更新
         cur.rules.bb_period = parseInt(document.getElementById("bb_period").value);
         cur.rules.bb_sigma = parseFloat(document.getElementById("bb_sigma").value);
@@ -180,13 +225,13 @@
         cur.rules.volume_spike_mult = parseFloat(document.getElementById("vol_mult").value);
 
         // 保存
-        const res = await fetch("/config", {
+        const res = await fetch(`${effectiveBackendUrl}/config`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(cur)
         });
-        const ok = (await res.json()).ok;
-        SAVE_STATUS.textContent = ok ? "保存しました。" : "保存に失敗しました。";
+        const ok = res.ok;
+        SAVE_STATUS.textContent = ok ? "保存しました。" : `保存に失敗しました（status=${res.status}）`;
         SAVE_STATUS.className = ok ? "note ok" : "note err";
       } catch (e) {
         console.error(e);
@@ -199,13 +244,10 @@
     document.getElementById("btn-reload").addEventListener("click", loadConfig);
     // 起動時に読み込み
     loadConfig();
-
-    // ======= TradingView ウィジェット（任意） =======
-    // 使わない場合はこのブロックを削除可
   </script>
 
   <!-- TradingViewウィジェット（任意） -->
-  https://s3.tradingview.com/tv.js</script>
+  <ttps://s3.tradingview.com/tv.js</script>
   <script>
     try {
       new TradingView.widget({
@@ -223,3 +265,4 @@
     } catch (e) { console.warn("TradingView init skipped:", e); }
   </script>
 </body>
+</html>
