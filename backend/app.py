@@ -15,7 +15,7 @@ app = Flask(__name__)
 
 # Netlify の公開 URL を許可（あなたの URL に置き換えてください）
 # 例: "https://fabulous-florentine-7a9f86.netlify.app"
-ALLOWED_ORIGIN = "https://YOUR-NETLIFY-SITE.netlify.app"
+ALLOWED_ORIGIN = "https://fabulous-florentine-7a9f86.netlify.app"
 CORS(app, resources={r"/*": {"origins": ALLOWED_ORIGIN}})
 
 # ===== 設定読み込み =====
@@ -125,3 +125,4 @@ if __name__ == "__main__":
     sched.start()
     # 0.0.0.0 で起動（Render から外部アクセス可能）
     app.run(host="0.0.0.0", port=5000)
+
