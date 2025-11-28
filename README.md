@@ -1,0 +1,2 @@
+# cfdbot
+for cfd trade
