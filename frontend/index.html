@@ -1,70 +1,142 @@
+
 <!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
   <title>CFD アラート設定</title>
 
-  <!-- PWA: ホーム画面に追加するための manifest（正しい link タグ） -->
   <link>/manifest.json
-
-  <!-- OneSignal SDK（正しい script タグ） -->
-  https://cdn.onesignal.com/sdks/OneSignalSDK.js</script>
 
   <meta name="theme-color" content="#0b1220">
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
+  <!-- スタイル（最小限） -->
   <style>
-    body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; background:#0b1220; color:#e8eef9; }
+    :root { --bg:#0b1220; --fg:#e8eef9; --accent:#3b82f6; --card:#121826; --border:#1e2636; --muted:#9aa4b2; }
+    body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; background:var(--bg); color:var(--fg); }
     header { padding:18px 20px; border-bottom:1px solid #222; }
-    main { padding:20px; max-width:860px; margin:0 auto; }
-    .note { color:#9aa4b2; }
-    .card { background:#121826; border:1px solid #1e2636; border-radius:10px; padding:16px; margin:16px 0; }
-    button { cursor:pointer; background:#3b82f6; color:#fff; border:none; border-radius:8px; padding:10px 14px; font-weight:600; }
+    main   { padding:20px; max-width:860px; margin:0 auto; }
+    h1,h2 { margin:0 0 10px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; margin:16px 0; }
+    label { display:block; margin:12px 0 6px; color:#cbd5e1; }
+    input[type="number"], input[type="text"] { width:140px; padding:8px 10px; background:#0b1220; color:var(--fg); border:1px solid #344256; border-radius:6px; }
+    button { cursor:pointer; background:var(--accent); color:#fff; border:none; border-radius:8px; padding:10px 14px; font-weight:600; }
     button.secondary { background:#263247; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    .note { color:var(--muted); font-size:0.93rem; }
+    .ok { color:#72ff9f; }
+    .err { color:#ff6b6b; }
+    .divider { border-top:1px dashed #2a3448; margin:14px 0; }
+    code { background:#0b1220; padding:2px 6px; border:1px solid #263247; border-radius:6px; }
   </style>
+
+  <script>https://cdn.onesignal.com/sdks/OneSignalSDK.js</script>
 </head>
 
 <body>
   <header>
     <h1>CFD アラート設定</h1>
     <div class="note">
-      iPhoneはSafariでこのページを開き、<b>共有 → ホーム画面に追加</b>してPWAから起動してください。<br>
-      通知が来ない場合：HTTPS／<code>manifest.json</code>／<code>OneSignalSDKWorker.js</code>の配置を確認。
+      iPhoneはSafariでこのページを開き、<b>共有 → ホーム画面に追加</b>してPWAから起動すると通知が使えます。<br/>
+      通知が来ない場合：HTTPS公開／<code>manifest.json</code>／<code>OneSignalSDKWorker.js</code>配置を確認してください。
     </div>
   </header>
 
   <main>
+    <!-- 接続設定 -->
     <section class="card">
-      <h2>通知テスト</h2>
-      <button id="btn-perm">通知を許可</button>
-      <button id="btn-test" class="secondary">テスト通知</button>
-      <span id="perm-status" class="note"></span>
+      <h2>接続設定</h2>
+      <label>バックエンドURL（RenderのWeb ServiceのURL）</label>
+      <input id="backend_url_input" type="text" placeholder="https://cfdbot.onrender.com" />
+      <div class="row" style="margin-top:10px;">
+        <button id="btn-set-backend" class="secondary">このURLで接続テスト</button>
+        <span id="backend-status" class="note"></span>
+      </div>
+      <div class="divider"></div>
+      <div class="note">
+        ※入力しなくても、下のスクリプト内の <code>BACKEND_URL</code> が既定値になります。変更したいときだけ「接続テスト」で一時的に差し替えできます。
+      </div>
+    </section>
+
+    <!-- 通知購読＆状態 -->
+    <section class="card">
+      <h2>通知の準備</h2>
+      <p class="note">
+        初回は「通知を許可」を押して購読します。<br>
+        iOSの仕様により、<b>ホーム画面に追加したPWA</b>でのみWeb Pushが動作します。
+      </p>
+      <div class="row">
+        <button id="btn-perm">通知を許可</button>
+        <button id="btn-test" class="secondary">テスト通知を受け取る</button>
+        <span id="perm-status" class="note"></span>
+      </div>
+    </section>
+
+    <!-- 閾値の調整 -->
+    <section class="card">
+      <h2>アラート閾値（エントリー重視）</h2>
+      <form id="form-cfg">
+        <label>ボリンジャーバンド期間（BB期間）</label>
+        <input id="bb_period" type="number" min="5" max="50" value="20">
+
+        <label>ボリンジャーバンドσ（BBσ）</label>
+        <input id="bb_sigma" type="number" step="0.1" min="1" max="3" value="2.0">
+
+        <label>RSI買い閾値</label>
+        <input id="rsi_buy_threshold" type="number" min="20" max="60" value="40">
+
+        <label>出来高移動平均期間</label>
+        <input id="vol_ma" type="number" min="5" max="60" value="20">
+
+        <label>出来高スパイク倍率（移動平均×倍率）</label>
+        <input id="vol_mult" type="number" step="0.1" min="1.0" max="3.0" value="1.5">
+
+        <div class="row" style="margin-top:14px;">
+          <button type="submit">保存</button>
+          <button type="button" id="btn-reload" class="secondary">最新設定を読み込み</button>
+          <span id="save-status" class="note"></span>
+        </div>
+      </form>
+    </section>
+
+    <!-- 簡易チャート（任意） -->
+    <section class="card">
+      <h2>簡易チャート（任意）</h2>
+      <div id="tvchart" style="height:360px;"></div>
+      <p class="note">監視対象の表示例。不要ならこのブロックごと削除して構いません。</p>
     </section>
   </main>
 
-  <!-- あなたの値に置き換え -->
+  <!-- 設定：あなたの値に置き換えてください -->
   <script>
-    const ONESIGNAL_APP_ID = "9fd9891c-2b88-49ba-8df2-3e3adb27e7bc"; // ← OneSignal App ID
+    const BACKEND_URL = "https://cfdbot.onrender.com";   // ← あなたのRender URL
+    const ONESIGNAL_APP_ID = "9fd9891c-2b88-49ba-8df2-3e3adb27e7bc"; // ← あなたのOneSignal App ID
   </script>
 
-  <!-- OneSignal 初期化 -->
+  <!-- OneSignal 初期化＆UIロジック -->
   <script>
+    // ======= OneSignal 初期化 =======
     window.OneSignal = window.OneSignal || [];
     OneSignal.push(function () {
       OneSignal.init({ appId: ONESIGNAL_APP_ID });
 
+      // 許可状態の表示
       OneSignal.isPushNotificationsEnabled().then((enabled) => {
         setPermStatus(enabled ? "通知許可済み" : "未許可", enabled);
       });
-      OneSignal.on('subscriptionChange', (isSubscribed) => {
-        setPermStatus(isSubscribed ? "購読中（通知可能）" : "未購読", isSubscribed);
+
+      // 購読状態の変化を監視
+      OneSignal.on('subscriptionChange', function (isSubscribed) {
+        setPermStatus(isSubscribed ? "購読中（通知可能）」" : "未購読", isSubscribed);
       });
     });
 
+    // UI：通知許可ボタン
     document.getElementById("btn-perm").addEventListener("click", () => {
-      OneSignal.Slidedown.promptPush();
+      OneSignal.Slidedown.promptPush(); // 許可ダイアログ
     });
 
+    // UI：テスト通知（SW経由ローカル）
     document.getElementById("btn-test").addEventListener("click", async () => {
       try {
         const reg = await navigator.serviceWorker.getRegistration();
@@ -90,13 +162,100 @@
     }
   </script>
 
-  <script>https://s3.tradingview.com/tv.js</script>
+  <!-- 設定保存・読み込み（Render /config） -->
+  <script>
+    const SAVE_STATUS = document.getElementById("save-status");
+
+    // 接続テスト用（入力欄から一時差し替え）
+    let effectiveBackendUrl = BACKEND_URL;
+    document.getElementById("backend_url_input").value = BACKEND_URL;
+    document.getElementById("btn-set-backend").addEventListener("click", async () => {
+      const u = document.getElementById("backend_url_input").value.trim();
+      if (!u) return;
+      document.getElementById("backend-status").textContent = "接続テスト中…";
+      try {
+        const res = await fetch(`${u}/config`, { method: "GET" });
+        if (res.ok) {
+          effectiveBackendUrl = u;
+          document.getElementById("backend-status").textContent = "接続成功：このURLを使用します";
+          document.getElementById("backend-status").className = "note ok";
+        } else {
+          throw new Error(`status=${res.status}`);
+        }
+      } catch (e) {
+        console.error(e);
+        document.getElementById("backend-status").textContent = "接続失敗：URLやCORS設定を確認してください";
+        document.getElementById("backend-status").className = "note err";
+      }
+    });
+
+    async function loadConfig() {
+      try {
+        const res = await fetch(`${effectiveBackendUrl}/config`, { method: "GET" });
+        const cfg = await res.json();
+
+        document.getElementById("bb_period").value = cfg.rules.bb_period ?? 20;
+        document.getElementById("bb_sigma").value = cfg.rules.bb_sigma ?? 2.0;
+        document.getElementById("rsi_buy_threshold").value = cfg.rules.rsi_buy_threshold ?? 40;
+        document.getElementById("vol_ma").value = cfg.rules.volume_ma_period ?? 20;
+        document.getElementById("vol_mult").value = cfg.rules.volume_spike_mult ?? 1.5;
+
+        SAVE_STATUS.textContent = "設定を読み込みました。";
+        SAVE_STATUS.className = "note ok";
+      } catch (e) {
+        console.error(e);
+        SAVE_STATUS.textContent = "設定の読み込みに失敗しました。";
+        SAVE_STATUS.className = "note err";
+      }
+    }
+
+    async function saveConfig(e) {
+      e.preventDefault();
+      try {
+        const cur = await (await fetch(`${effectiveBackendUrl}/config`, { method: "GET" })).json();
+        cur.rules.bb_period = parseInt(document.getElementById("bb_period").value);
+        cur.rules.bb_sigma = parseFloat(document.getElementById("bb_sigma").value);
+        cur.rules.rsi_buy_threshold = parseInt(document.getElementById("rsi_buy_threshold").value);
+        cur.rules.volume_ma_period = parseInt(document.getElementById("vol_ma").value);
+        cur.rules.volume_spike_mult = parseFloat(document.getElementById("vol_mult").value);
+
+        const res = await fetch(`${effectiveBackendUrl}/config`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(cur)
+        });
+        const ok = res.ok;
+        SAVE_STATUS.textContent = ok ? "保存しました。" : `保存に失敗しました（status=${res.status}）`;
+        SAVE_STATUS.className = ok ? "note ok" : "note err";
+      } catch (e) {
+        console.error(e);
+        SAVE_STATUS.textContent = "保存時にエラーが発生しました。";
+        SAVE_STATUS.className = "note err";
+      }
+    }
+
+    document.getElementById("form-cfg").addEventListener("submit", saveConfig);
+    document.getElementById("btn-reload").addEventListener("click", loadConfig);
+    loadConfig();
+  </script>
+
+  <!-- TradingView ウィジェット（正しい script タグ） -->
+  https://s3.tradingview.com/tv.js</script>
+  <script>
+    try {
+      new TradingView.widget({
+        "container_id": "tvchart",
+        "symbol": "NASDAQ:NDX",
+        "interval": "60",
+        "timezone": "Asia/Tokyo",
+        "theme": "dark",
+        "style": "1",
+        "locale": "ja",
+        "hide_side_toolbar": true,
+        "allow_symbol_change": true,
+        "autosize": true
+      });
+    } catch (e) { console.warn("TradingView init skipped:", e); }
+  </script>
 </body>
 </html>
-
-
-
-
-
-
-
